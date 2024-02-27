@@ -7,7 +7,9 @@ use hyper::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::http::header::{InvalidHeaderValue, ToStrError};
 use hyper::http::uri::InvalidUri;
 use hyper::upgrade::OnUpgrade;
-use hyper::{Body, Client, Error, Request, Response, StatusCode};
+use hyper::{body::Incoming, Error, Request, Response, StatusCode};
+use hyper_util::client::legacy::{connect::Connect, Client, Error as LegacyError};
+use hyper_util::rt::tokio::TokioIo;
 use lazy_static::lazy_static;
 use std::net::IpAddr;
 use tokio::io::copy_bidirectional;
@@ -37,9 +39,16 @@ lazy_static! {
 #[derive(Debug)]
 pub enum ProxyError {
     InvalidUri(InvalidUri),
+    LegacyHyperError(LegacyError),
     HyperError(Error),
     ForwardHeaderError,
     UpgradeError(String),
+}
+
+impl From<LegacyError> for ProxyError {
+    fn from(err: LegacyError) -> ProxyError {
+        ProxyError::LegacyHyperError(err)
+    }
 }
 
 impl From<Error> for ProxyError {
@@ -75,7 +84,7 @@ fn remove_hop_headers(headers: &mut HeaderMap) {
 }
 
 fn get_upgrade_type(headers: &HeaderMap) -> Option<String> {
-    #[allow(clippy::blocks_in_if_conditions)]
+    #[allow(clippy::blocks_in_conditions)]
     if headers
         .get(&*CONNECTION_HEADER)
         .map(|value| {
@@ -278,12 +287,12 @@ fn create_proxied_request<B>(
     Ok(request)
 }
 
-pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync + 'static>(
+pub async fn call<'a, T: Connect + Clone + Send + Sync + 'static>(
     client_ip: IpAddr,
     forward_uri: &str,
-    mut request: Request<Body>,
-    client: &'a Client<T>,
-) -> Result<Response<Body>, ProxyError> {
+    mut request: Request<Incoming>,
+    client: &'a Client<T, Incoming>,
+) -> Result<Response<Incoming>, ProxyError> {
     info!(
         "Received proxy call from {} to {}, client: {}",
         request.uri().to_string(),
@@ -307,17 +316,19 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
 
         if request_upgrade_type == response_upgrade_type {
             if let Some(request_upgraded) = request_upgraded {
-                let mut response_upgraded = response
-                    .extensions_mut()
-                    .remove::<OnUpgrade>()
-                    .expect("response does not have an upgrade extension")
-                    .await?;
+                let mut response_upgraded = TokioIo::new(
+                    response
+                        .extensions_mut()
+                        .remove::<OnUpgrade>()
+                        .expect("response does not have an upgrade extension")
+                        .await?,
+                );
 
                 debug!("Responding to a connection upgrade response");
 
                 tokio::spawn(async move {
                     let mut request_upgraded =
-                        request_upgraded.await.expect("failed to upgrade request");
+                        TokioIo::new(request_upgraded.await.expect("failed to upgrade request"));
 
                     copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
                         .await
@@ -344,12 +355,12 @@ pub async fn call<'a, T: hyper::client::connect::Connect + Clone + Send + Sync +
     }
 }
 
-pub struct ReverseProxy<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> {
-    client: Client<T>,
+pub struct ReverseProxy<T: Connect + Clone + Send + Sync + 'static> {
+    client: Client<T, Incoming>,
 }
 
-impl<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> ReverseProxy<T> {
-    pub fn new(client: Client<T>) -> Self {
+impl<T: Connect + Clone + Send + Sync + 'static> ReverseProxy<T> {
+    pub fn new(client: Client<T, Incoming>) -> Self {
         Self { client }
     }
 
@@ -357,8 +368,8 @@ impl<T: hyper::client::connect::Connect + Clone + Send + Sync + 'static> Reverse
         &self,
         client_ip: IpAddr,
         forward_uri: &str,
-        request: Request<Body>,
-    ) -> Result<Response<Body>, ProxyError> {
+        request: Request<Incoming>,
+    ) -> Result<Response<Incoming>, ProxyError> {
         call::<T>(client_ip, forward_uri, request, &self.client).await
     }
 }
