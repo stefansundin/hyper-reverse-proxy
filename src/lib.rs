@@ -265,12 +265,12 @@ fn create_proxied_request<B>(
     // Add forwarding information in the headers
     match request.headers_mut().entry(&*X_FORWARDED_FOR) {
         hyper::header::Entry::Vacant(entry) => {
-            debug!("X-Fowraded-for header was vacant");
+            debug!("X-Forwarded-for header was vacant");
             entry.insert(client_ip.to_string().parse()?);
         }
 
         hyper::header::Entry::Occupied(entry) => {
-            debug!("X-Fowraded-for header was occupied");
+            debug!("X-Forwarded-for header was occupied");
             let client_ip_str = client_ip.to_string();
             let mut addr =
                 String::with_capacity(entry.get().as_bytes().len() + 2 + client_ip_str.len());
