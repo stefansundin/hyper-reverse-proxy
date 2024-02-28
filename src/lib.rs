@@ -137,7 +137,7 @@ fn forward_uri<B>(forward_url: &str, req: &Request<B>) -> String {
 
     let split_url = forward_url.split('?').collect::<Vec<&str>>();
 
-    let mut base_url: &str = split_url.get(0).unwrap_or(&"");
+    let mut base_url: &str = split_url.first().unwrap_or(&"");
     let forward_url_query: &str = split_url.get(1).unwrap_or(&"");
 
     let path2 = req.uri().path();
@@ -320,19 +320,18 @@ pub async fn call<'a, T: Connect + Clone + Send + Sync + 'static>(
                     response
                         .extensions_mut()
                         .remove::<OnUpgrade>()
-                        .expect("response does not have an upgrade extension")
+                        .ok_or(ProxyError::UpgradeError(
+                            "Failed to upgrade response".to_string(),
+                        ))?
                         .await?,
                 );
 
                 debug!("Responding to a connection upgrade response");
 
-                tokio::spawn(async move {
-                    let mut request_upgraded =
-                        TokioIo::new(request_upgraded.await.expect("failed to upgrade request"));
+                let mut request_upgraded = TokioIo::new(request_upgraded.await?);
 
-                    copy_bidirectional(&mut response_upgraded, &mut request_upgraded)
-                        .await
-                        .expect("coping between upgraded connections failed");
+                tokio::spawn(async move {
+                    copy_bidirectional(&mut response_upgraded, &mut request_upgraded).await
                 });
 
                 Ok(response)
