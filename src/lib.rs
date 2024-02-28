@@ -124,7 +124,7 @@ fn remove_connection_headers(headers: &mut HeaderMap) {
 }
 
 fn create_proxied_response<B>(mut response: Response<B>) -> Response<B> {
-    info!("Creating proxied response");
+    debug!("Creating proxied response");
 
     remove_hop_headers(response.headers_mut());
     remove_connection_headers(response.headers_mut());
@@ -216,7 +216,7 @@ fn create_proxied_request<B>(
     mut request: Request<B>,
     upgrade_type: Option<&String>,
 ) -> Result<Request<B>, ProxyError> {
-    info!("Creating proxied request");
+    debug!("Creating proxied request");
 
     let contains_te_trailers_value = request
         .headers()
@@ -293,7 +293,7 @@ pub async fn call<'a, T: Connect + Clone + Send + Sync + 'static>(
     mut request: Request<Incoming>,
     client: &'a Client<T, Incoming>,
 ) -> Result<Response<Incoming>, ProxyError> {
-    info!(
+    debug!(
         "Received proxy call from {} to {}, client: {}",
         request.uri().to_string(),
         forward_uri,
