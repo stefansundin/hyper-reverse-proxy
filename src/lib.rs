@@ -286,12 +286,9 @@ fn get_upstream_addr(forward_uri: &hyper::Uri) -> Result<SocketAddr, ProxyError>
     let port = forward_uri.port_u16().ok_or(ProxyError::UpstreamError(
         "forward_uri has no port".to_string(),
     ))?;
-    Ok(SocketAddr::new(
-        host.parse().map_err(|_| {
-            ProxyError::UpstreamError("forward_uri host must be an IP address".to_string())
-        })?,
-        port,
-    ))
+    format!("{host}:{port}").parse().map_err(|_| {
+        ProxyError::UpstreamError("forward_uri host must be an IP address".to_string())
+    })
 }
 
 type ResponseBody = http_body_util::combinators::UnsyncBoxBody<hyper::body::Bytes, std::io::Error>;
