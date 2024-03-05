@@ -1,3 +1,18 @@
+# This is a fork
+
+This repo contains a fork of the[original hyper-reverse-proxy
+codebase][upstream], adding to it a few improvements:
+
+- Fix to a bug where the `Host` header was getting overwritten on the upstream
+  HTTP request.
+
+- Upgraded hyper version to 1.x (and fixes related to that upgrade)
+
+- Logging cleanup
+
+Plus more as time goes on.
+
+[upstream]: https://github.com/felipenoris/hyper-reverse-proxy
 
 # hyper-reverse-proxy
 
