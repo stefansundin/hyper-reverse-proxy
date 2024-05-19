@@ -2,6 +2,7 @@ use std::{
     convert::Infallible,
     net::{IpAddr, SocketAddr},
     process::exit,
+    sync::OnceLock,
     time::Duration,
 };
 
@@ -20,12 +21,9 @@ use tokiotest_httpserver::take_port;
 use tungstenite::Message;
 use url::Url;
 
-lazy_static::lazy_static! {
-    static ref  PROXY_CLIENT: ReverseProxy<HttpConnector<GaiResolver>> = {
-        ReverseProxy::new(
-            hyper::Client::new(),
-        )
-    };
+fn proxy_client() -> &'static ReverseProxy<HttpConnector<GaiResolver>> {
+    static PROXY_CLIENT: OnceLock<ReverseProxy<HttpConnector<GaiResolver>>> = OnceLock::new();
+    PROXY_CLIENT.get_or_init(|| ReverseProxy::new(hyper::Client::new()))
 }
 
 struct ProxyTestContext {
@@ -66,7 +64,7 @@ async fn handle(
     req: Request<Body>,
     backend_port: u16,
 ) -> Result<Response<Body>, Infallible> {
-    match PROXY_CLIENT
+    match proxy_client()
         .call(
             client_ip,
             format!("http://127.0.0.1:{}", backend_port).as_str(),

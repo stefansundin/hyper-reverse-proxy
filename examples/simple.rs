@@ -1,6 +1,7 @@
 use std::convert::Infallible;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use http_body_util::combinators::UnsyncBoxBody;
@@ -19,25 +20,26 @@ use hyper_util::client::legacy::connect::HttpConnector;
 type Connector = HttpsConnector<HttpConnector>;
 type ResponseBody = UnsyncBoxBody<Bytes, std::io::Error>;
 
-lazy_static::lazy_static! {
-    static ref PROXY_CLIENT: ReverseProxy<Connector> = {
-      let connector: Connector = Connector::builder()
-          .with_tls_config(
-              rustls::ClientConfig::builder()
-                  .with_native_roots()
-                  .expect("with_native_roots")
-                  .with_no_client_auth(),
-          )
-          .https_or_http()
-          .enable_http1()
-          .build();
-      ReverseProxy::new(
-          hyper_util::client::legacy::Builder::new(TokioExecutor::new())
-              .pool_idle_timeout(Duration::from_secs(3))
-              .pool_timer(TokioTimer::new())
-              .build::<_, Incoming>(connector),
-      )
-    };
+fn proxy_client() -> &'static ReverseProxy<Connector> {
+    static PROXY_CLIENT: OnceLock<ReverseProxy<Connector>> = OnceLock::new();
+    PROXY_CLIENT.get_or_init(|| {
+        let connector: Connector = Connector::builder()
+            .with_tls_config(
+                rustls::ClientConfig::builder()
+                    .with_native_roots()
+                    .expect("with_native_roots")
+                    .with_no_client_auth(),
+            )
+            .https_or_http()
+            .enable_http1()
+            .build();
+        ReverseProxy::new(
+            hyper_util::client::legacy::Builder::new(TokioExecutor::new())
+                .pool_idle_timeout(Duration::from_secs(3))
+                .pool_timer(TokioTimer::new())
+                .build::<_, Incoming>(connector),
+        )
+    })
 }
 
 async fn handle(
@@ -46,7 +48,7 @@ async fn handle(
 ) -> Result<Response<ResponseBody>, Infallible> {
     let host = req.headers().get("host").and_then(|v| v.to_str().ok());
     if host.is_some_and(|host| host.starts_with("service1.localhost")) {
-        match PROXY_CLIENT
+        match proxy_client()
             .call(client_ip, "http://127.0.0.1:13901", req)
             .await
         {
@@ -59,7 +61,7 @@ async fn handle(
                 .unwrap()),
         }
     } else if host.is_some_and(|host| host.starts_with("service2.localhost")) {
-        match PROXY_CLIENT
+        match proxy_client()
             .call(client_ip, "http://127.0.0.1:13902", req)
             .await
         {

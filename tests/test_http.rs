@@ -7,6 +7,7 @@ use hyper::{Body, Client, Request, Response, Server, StatusCode, Uri};
 use hyper_reverse_proxy::ReverseProxy;
 use std::convert::Infallible;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::OnceLock;
 use test_context::test_context;
 use test_context::AsyncTestContext;
 use tokio::sync::oneshot::Sender;
@@ -14,12 +15,9 @@ use tokio::task::JoinHandle;
 use tokiotest_httpserver::handler::HandlerBuilder;
 use tokiotest_httpserver::{take_port, HttpTestContext};
 
-lazy_static::lazy_static! {
-    static ref  PROXY_CLIENT: ReverseProxy<HttpConnector<GaiResolver>> = {
-        ReverseProxy::new(
-            hyper::Client::new(),
-        )
-    };
+fn proxy_client() -> &'static ReverseProxy<HttpConnector<GaiResolver>> {
+    static PROXY_CLIENT: OnceLock<ReverseProxy<HttpConnector<GaiResolver>>> = OnceLock::new();
+    PROXY_CLIENT.get_or_init(|| ReverseProxy::new(hyper::Client::new()))
 }
 
 struct ProxyTestContext {
@@ -99,7 +97,7 @@ async fn handle(
     req: Request<Body>,
     backend_port: u16,
 ) -> Result<Response<Body>, Infallible> {
-    match PROXY_CLIENT
+    match proxy_client()
         .call(
             client_ip,
             format!("http://127.0.0.1:{}", backend_port).as_str(),

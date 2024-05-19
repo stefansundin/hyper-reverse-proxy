@@ -10,16 +10,14 @@ use rand::distributions::Alphanumeric;
 use rand::prelude::*;
 use std::net::Ipv4Addr;
 use std::str::FromStr;
+use std::sync::OnceLock;
 use test_context::AsyncTestContext;
 use tokio::runtime::Runtime;
 use tokiotest_httpserver::HttpTestContext;
 
-lazy_static::lazy_static! {
-    static ref  PROXY_CLIENT: ReverseProxy<HttpConnector<GaiResolver>> = {
-        ReverseProxy::new(
-            hyper::Client::new(),
-        )
-    };
+fn proxy_client() -> &'static ReverseProxy<HttpConnector<GaiResolver>> {
+    static PROXY_CLIENT: OnceLock<ReverseProxy<HttpConnector<GaiResolver>>> = OnceLock::new();
+    PROXY_CLIENT.get_or_init(|| ReverseProxy::new(hyper::Client::new()))
 }
 
 fn create_proxied_response(b: &mut Criterion) {
@@ -46,7 +44,7 @@ fn generate_string() -> String {
 }
 
 fn build_headers() -> HeaderMap {
-    let mut headers_map: HeaderMap = (&*internal_benches::hop_headers())
+    let mut headers_map: HeaderMap = (internal_benches::hop_headers())
         .iter()
         .map(|el: &'static HeaderName| (el.clone(), generate_string().parse().unwrap()))
         .collect();
@@ -86,7 +84,7 @@ fn proxy_call(b: &mut Criterion) {
 
                 *request.headers_mut().unwrap() = headers_map.clone();
 
-                black_box(&PROXY_CLIENT)
+                black_box(&proxy_client())
                     .call(
                         black_box(client_ip),
                         black_box(forward_url),
