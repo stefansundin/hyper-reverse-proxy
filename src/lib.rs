@@ -405,6 +405,7 @@ pub async fn call<'a, T: Connect + Clone + Send + Sync + 'static>(
     Ok(downstream_response.map(|body| body.map_err(std::io::Error::other).boxed_unsync()))
 }
 
+#[derive(Debug, Clone)]
 pub struct ReverseProxy<T: Connect + Clone + Send + Sync + 'static> {
     client: Client<T, Incoming>,
 }
